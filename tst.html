@@ -1,0 +1,211 @@
+<!--Source code in this file are:
+(1) bootstrap templates of css and js:
+    http://getbootstrap.com/css/
+    http://getbootstrap.com/javascript/
+(2) dc.js heatmap example:
+    https://github.com/dc-js/dc.js/blob/master/web/examples/heat.html
+(3) dc.js row chart example:
+    https://github.com/dc-js/dc.js/blob/master/web/examples/row.html
+(4) dc.js datatable example:
+    https://github.com/dc-js/dc.js/blob/master/web/examples/table-on-aggregated-data.html
+(5) dc.js line chart time series:
+    http://www.d3noob.org/2013/08/add-line-chart-in-dcjs.html
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Zika Explore</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="./static/css/bootstrap.min.css">
+    <link rel="stylesheet" type="text/css" href="./static/css/dc.css"/>
+    <script type="text/javascript" src="./static/js/bootstrap.min.js"></script>
+    <script type="text/javascript" src="./static/js/jquery-2.0.3.min.js"></script>
+    <style>
+      .heat-box {
+        stroke: #E6E6E6;
+        stroke-width: 2px;
+      }
+      /*
+        .dc-data-count .total-count {
+            color: #3182bd;
+            font-weight: bold;
+        }
+        .dc-data-count .filter-count {
+            color: #3182bd;
+            font-weight: bold;
+        }
+      */
+    </style>
+
+</head>
+
+<header>
+  
+    <div class="navbar-header" style="margin-left:20px">
+        <a class="navbar-brand" href="#">
+          <h2>Zika Explore</h2>
+      </a>
+      <div class="container-fluid">
+    
+  </div>
+    </div>
+
+</header>
+
+<body>
+<div class="container-fluid">
+
+<div class="row" style="margin-top:100px; margin-left:10px">
+      <div class='col-xs-6'>
+        <div class="panel panel-success" >
+          <div class="panel-heading">
+            <h3 class="panel-title">Sentiment</h3>
+          </div>
+          <div class="panel-body">
+            <div id="sentiment" style="height:550px"></div>
+          </div>
+        </div>
+
+        <div class="panel panel-success" >
+          <div class="panel-heading">
+            <h3 class="panel-title">Time Series</h3>
+          </div>
+          <div class="panel-body">
+            <div id="time_series" style="height:250px"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class='col-xs-6'>
+        <div class="panel panel-success" >
+          <div class="panel-heading">
+            <h3 class="panel-title">Topics</h3>
+          </div>
+          <div class="panel-body">
+            <div id="topic" style="height:300px"></div>
+          </div>
+        </div>
+        <div class="panel panel-success" >
+          <div class="panel-heading">
+            <h3 class="panel-title">Tweets</h3>
+          </div>
+          <div class="panel-body">
+            <div id="tweets" style="height:500px">
+              <table class="table table-hover dc-data-table" id="data-table">
+                <thead>
+                    <tr class='header'>
+  
+                     </tr>
+                </thead>
+              </table>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+</div>
+
+<script type="text/javascript" src="./static/js/d3.js"></script>
+<script type="text/javascript" src="./static/js/crossfilter.js"></script>
+<script type="text/javascript" src="./static/js/dc.js"></script>
+<script type="text/javascript">
+
+var chartBunch = "cB";                //define chart group
+
+//define all the visualizations we need
+var heatmap = dc.heatMap("#sentiment",chartBunch);
+var RowChart = dc.rowChart("#topic",chartBunch);
+var tweetTable = dc.dataTable('#tweets',chartBunch);
+var timeSeries = dc.lineChart("#time_series",chartBunch);
+
+d3.csv("./data/tst.csv", function(error, data) {
+
+  //define format of time extraction
+  var timeFormat = d3.time.format("%a %b %d %H:%M:%S");
+
+  //change string time into special d3 format
+  data.forEach(function(d){
+      d.times = timeFormat.parse(d.created_at.substr(0,18));
+  });
+
+  //define filter and dimensions and groups each vis depends on
+  var ndx = crossfilter(data),
+      //dim and group of topic modeling, grouped based on the number of tweets
+      dimTopic = ndx.dimension(function(d) {return d.topic;}),
+      topicGroup = dimTopic.group().reduceCount(function(d){return d.x;}),
+      //dim and group of sentiment, grouped by specific tweets
+      dimSenti = ndx.dimension(function(d) { 
+        return [+d.x, +d.y]; 
+      }),
+      sentiGroup = dimSenti.group().reduceSum(function(d) { 
+        return +d.senti; 
+      }),
+      //dim and group of time series, grouped by number of tweets in each time
+      dimHour = ndx.dimension(function(d){
+        return d3.time.hour(d.times)
+      }),
+      hourGroup = dimHour.group().reduceCount(function(d){return d.times;});
+  // set and render heatmap
+  heatmap
+    .width(19 * 31 + 80)
+    .height(16 * 32 + 40)
+    .dimension(dimSenti)
+    .group(sentiGroup)
+    //set x and y axis. Since each cell represents one tweet, we give all tweets unique coordinations
+    .keyAccessor(function(d) { return +d.key[0]; })       
+    .valueAccessor(function(d) { return +d.key[1]; })
+    //set color for tweets with different sentiments
+    .colorAccessor(function(d) { return +d.value; })
+    //tooltips
+    .title(function(d) {
+        return "x:   " + d.key[0] + "\n" +
+               "y:  " + d.key[1] + "\n" +
+               "sentiment : " + (d.value) ;})
+    //color range: dark blue represnets negative and red represents positive
+    .colors(["#c44d40","#c47440","#c48640","#c4a540","#b2bdc1","#1d91c0","#225ea8","#253494","#1f4ed1"])
+    .calculateColorDomain();
+  //set the shape of cells
+  heatmap.xBorderRadius(0.9);
+  heatmap.yBorderRadius(0.9);
+
+  heatmap.render();
+
+  //set and render topic row chart
+  RowChart.dimension(dimTopic)
+        .group(topicGroup)
+        .height(300)
+        .width(600);
+  RowChart.render();
+
+  //set and render tweet table
+  tweetTable.dimension(dimSenti)
+            .group(function(d) {
+            return '   ';
+          })
+          .size(9)      //max 9 tweets
+          .columns([
+            function(d) { return '*'+d.text+'<br>'+'*******************************'; },  //change newline
+          ]);
+  tweetTable.render();
+
+  //set and render time series line chart
+  timeSeries
+    .width(650)
+    .height(250)
+    .transitionDuration(500)
+    .margins({top: 10, right: 10, bottom: 20, left: 40})
+    .dimension(dimHour)
+    .group(hourGroup)
+    .elasticY(true)
+    .x(d3.time.scale().domain(d3.extent(data, function(d) { return d.times; })))
+    .xAxis();       //set x axis value
+  timeSeries.render();
+
+});
+</script>
+
+</div>
+</body>
+</html>
